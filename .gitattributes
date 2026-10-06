@@ -1,0 +1,43 @@
+# ══════════════════════════════════════════════════════════════
+#  Enna · .gitattributes
+#
+#  统一换行符为 LF。
+#  原因：本项目在 Windows 上开发（当前环境），但设计目标部署在 Linux。
+#  若不做统一，Git 的 autocrlf 会在两端产生"整文件被改动"的伪 diff，
+#  让 code review 与 git blame 失去意义。
+# ══════════════════════════════════════════════════════════════
+
+# 默认：自动识别文本，检出时用 LF
+* text=auto eol=lf
+
+# 显式声明（避免依赖自动识别）
+*.md     text eol=lf
+*.go     text eol=lf
+*.py     text eol=lf
+*.proto  text eol=lf
+*.yaml   text eol=lf
+*.yml    text eol=lf
+*.json   text eol=lf
+*.service text eol=lf
+*.sh     text eol=lf
+Makefile text eol=lf
+
+# Windows 脚本需要 CRLF，否则部分场景下无法执行
+*.bat    text eol=crlf
+*.cmd    text eol=crlf
+*.ps1    text eol=crlf
+
+# 二进制（禁止任何换行符转换）
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.ico    binary
+*.gz     binary
+*.zip    binary
+*.xz     binary
+*.pdf    binary
+
+# 合并冲突时不要乱猜：这些文件用二进制合并策略更安全
+go.sum   merge=binary
+*.age    binary

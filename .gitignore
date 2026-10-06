@@ -1,0 +1,65 @@
+# ══════════════════════════════════════════════════════════════
+#  Enna · .gitignore
+#
+#  ⚠️ 本仓库描述的系统会持有 SSH 凭据与审计日志。
+#     敏感文件必须在第一次提交前就被排除，事后清理历史很痛苦。
+# ══════════════════════════════════════════════════════════════
+
+# ── 构建产物 ──
+/enna
+/enna-*.exe
+/dist/
+*.test
+*.out
+coverage.*
+
+# ── Go ──
+vendor/
+
+# ── Python（M2 起：enna-brain）──
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# ──────────────────────────────────────────────────────────────
+#  ⚠️ 以下为敏感内容，绝不入库
+# ──────────────────────────────────────────────────────────────
+
+# 真实配置：含设备地址、账号、凭据引用、主体 QQ 号
+# 仓库只提交 *.example.yaml 模板；运行时复制为 *.yaml
+configs/*.yaml
+!configs/*.example.yaml
+configs/local/
+*.local.yaml
+
+# 凭据与密钥（FR-AU-05 / FR-AU-06）
+*.key
+*.pem
+*.p12
+*.age
+secrets/
+vault/
+
+# SSH 主机指纹（防中间人的信任锚，属环境状态而非代码）
+known_hosts
+
+# 审计与运行数据（FR-AU-01 / FR-AU-07）
+audit/
+artifacts/
+data/
+
+# 环境变量与令牌
+.env
+.env.*
+
+# ── 编辑器 / 系统 ──
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*~
