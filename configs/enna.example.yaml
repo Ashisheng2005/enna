@@ -1,0 +1,107 @@
+# ══════════════════════════════════════════════════════════════
+#  Enna 配置示例
+#
+#  用法：
+#     cp configs/enna.example.yaml configs/enna.yaml
+#     $EDITOR configs/enna.yaml
+#     enna config check --config configs/enna.yaml
+#
+#  ⚠️ 仓库只提交 *.example.yaml。configs/*.yaml 已被 .gitignore 排除 ——
+#     真实配置含设备地址与账号，不进版本库。
+#
+#  ⚠️ 本示例使用 Linux 绝对路径（部署目标为 Linux）。
+#     在 Windows 开发机上 `enna config check` 会拒绝它，因为校验要求绝对路径。
+#     开发时请自行替换为 Windows 绝对路径（如 C:/enna/data）。
+# ══════════════════════════════════════════════════════════════
+
+# 运行时数据根目录：放审计、artifacts、凭据库
+data_dir: /var/lib/enna
+
+audit:
+  # 审计哈希链文件。必填、必须绝对路径。
+  # 它不可写时，系统会拒绝一切 L1 以上操作（fail-closed）
+  path: /var/lib/enna/audit/audit.jsonl
+
+ssh:
+  # 主机密钥校验文件。必填。
+  # 缺失等于放弃防中间人，所以这里不给默认值。
+  known_hosts: /var/lib/enna/known_hosts
+  # 设备默认登录账号；设备可单独覆盖。
+  # 约定：设备侧创建专用低权账号，sudo 只放开白名单命令（不给 NOPASSWD: ALL）
+  default_user: enna-ops
+  # 以下两项可省略，省略时用内置默认（5s / 15s）
+  dial_timeout: 5s
+  command_timeout: 15s
+
+policy:
+  # 在代码级 L4 禁止清单之外，额外禁止的技能。
+  # 注意：L4 核心项（reboot / 改 sshd / shell 透传等）硬编码在代码里，不可配置解锁。
+  forbidden_skills:
+    - shell.run
+
+  # 用于【下调】技能风险等级。
+  # 若这里填的等级高于技能自身声明的等级，策略闸门会拒绝 —— 配置只能收紧，不能放宽。
+  risk_overrides:
+    service.reload: L1
+
+  # 通道维度的风险上限。
+  # ⚠️ group 必须是 L0，写别的值会导致启动失败（群聊硬限，不可上调）。
+  max_risk_by_channel:
+    group: L0
+    private: L2
+
+  principals:
+    # 主体（人）。身份锚点是 QQ 号。
+    # 权限是 (bot_id, qq_id) 的函数，不提供 QQ 自助申请。
+    - qq_id: 10001
+      display: 老王
+      role: OWNER # OWNER / OPERATOR / VIEWER
+      # 可通过哪些机器人账号交互。拓扑 (b) 下即"可管理哪些设备"。
+      # 留空表示不限；推荐显式列出。
+      bot_scope: [20001, 20002]
+      acl:
+        - group: lab
+          max_risk: L3 # 在 lab 组内最高可执行 L3（需双签）
+        - group: prod
+          max_risk: L1 # 生产环境只给只读与低危写
+
+    - qq_id: 10002
+      display: 值班同学
+      role: OPERATOR
+      bot_scope: [20001]
+      acl:
+        - group: lab
+          max_risk: L1
+
+devices:
+  # 受管设备静态清单。不支持"临时连接任意主机" —— 防止被诱导接入攻击者控制的机器。
+  - id: lab01
+    addr: 10.0.0.11:22
+    # user 省略则继承 ssh.default_user
+    key_path: /var/lib/enna/keys/lab01_ed25519
+    # jump_host: 10.0.0.1:22      # 可选跳板机
+    groups: [lab]
+    tags: [nginx, test]
+
+    # service.* 技能可操作的单元白名单。
+    # ⚠️ 为空表示【拒绝一切】service 操作，而不是"允许全部"。这是刻意设计。
+    # 正则校验防注入，白名单防"合法但错误的目标" —— 两层都要有。
+    managed_units:
+      - nginx
+      - php-fpm
+
+    # file / log 类技能可触及的路径前缀白名单。
+    # ⚠️ 同样为空表示拒绝一切。卷根目录（/ 或 C:\）会被校验直接拒绝。
+    allowed_paths:
+      - /var/log/nginx
+      - /tmp
+
+  - id: lab02
+    addr: 10.0.0.12:22
+    key_path: /var/lib/enna/keys/lab02_ed25519
+    groups: [lab, prod]
+    tags: [redis]
+    managed_units:
+      - redis
+    allowed_paths:
+      - /var/log/redis
