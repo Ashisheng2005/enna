@@ -86,6 +86,74 @@ enna audit verify                        # OK / 指出断链位置
 
 ---
 
+## 1.5 本仓库当前的代码状态（**练习题模式**）
+
+Step 0–2 的代码**已经写好并验证通过**（构建、vet、24 个顶层用例 + 40 个子用例全绿、端到端 CLI 与篡改检测实测通过），然后按约定把**核心逻辑注释掉了**：
+
+| 文件 | 状态 |
+|---|---|
+| `internal/config/config.go` | ⬜ 待重写 4 个函数（`applyDefaults` / `Validate` / `validatePolicy` / `validateDevices`）+ 1 处严格模式开关 |
+| `internal/audit/record.go` | ⬜ 待重写 `Record.ComputeHash` |
+| `internal/audit/log.go` | ⬜ 待重写 `Open` / `Append` / `Verify` |
+| `internal/audit/read.go` | ⬜ 待重写 `Read` |
+| `internal/audit/redact.go` | ⬜ 待重写 `Redact`（规则集已给） |
+| `internal/cli/`、`cmd/enna/` | ✅ 已给（样板代码，不是学习重点） |
+| `*_test.go` | ✅ 已给 —— **它们是验收标准，不要改** |
+| `configs/enna.example.yaml` | ✅ 已给 |
+| `internal/config` 的 `requireAbs*` / `Find*` | ✅ 已给（trivial 工具函数） |
+
+### 保留了什么，注释掉了什么
+
+| 保留（不用管） | 注释掉（你来写） |
+|---|---|
+| 所有类型 / 常量 / 变量声明 | 承载"为什么这么设计"的核心逻辑 |
+| 所有函数签名与文档注释 | 哈希计算、链校验、fsync 写入 |
+| 纯样板代码（错误包装、格式化、trivial getter） | 脱敏主循环、配置校验规则、路径判定 |
+| **全部测试代码** | — |
+
+**为什么不把整个文件都注释掉**：那样包就编译不过，你连"签名对不对"都验证不了。现在骨架能通过 `go build` 与 `go vet`，只有运行到未实现处才 panic —— 反馈更及时。被临时注释掉的 import 也都留了提示（"实现 X 时需要包 Y"）。
+
+### 怎么用
+
+```bash
+# 1. 看当前有多少处待实现
+grep -rn "TODO(enna)" --include=*.go .
+
+# 2. 实现一个，跑一次测试（不要写完一片再一起调试）
+go test ./internal/audit/ -run TestComputeHash -v
+
+# 3. 参考实现在每个函数内的注释块里（┌── 参考实现 ──┐ 那种）
+#    写完自己的版本后，把那整段注释删掉
+
+# 4. 全部完成后
+go build ./... && go vet ./... && go test -race ./...
+```
+
+### 参考答案在 git 历史里
+
+```bash
+git show 8a76e98                                 # 完整可运行的参考实现
+git diff 8a76e98 HEAD                            # 看看到底注释掉了哪些东西
+git checkout 8a76e98 -- internal/audit/log.go    # 只想看某一个文件的答案
+```
+
+> **建议**：先自己写，卡住了再看函数内的注释块，实在不行才 `git show`。
+
+### 这四个"为什么"才是重点
+
+难点不在语法，而在几个具体判断：
+
+1. 为什么审计记录**不能用 `map[string]any`** 序列化？（提示：`encoding/json` 对 map 排序、对 struct 按声明顺序）
+2. 为什么 `Write` 之后**必须 `Sync`**？（提示：断电后"记录过的操作"是否真的存在）
+3. 为什么写入失败要把日志**"毒化"**，而不是回滚 `seq` 重试？
+4. 为什么路径前缀判断**不能用 `strings.HasPrefix`**？（提示：`/var/logs-evil` 与 `/var/log`）
+
+### 完成标准
+
+`go test -race ./...` 全绿，且你能不看注释解释上面四个问题。
+
+---
+
 ## 2. 目录结构（M0 精确版）
 
 ```

@@ -15,12 +15,27 @@
 //
 // 之所以把 known_hosts 定为必填：它缺失时 SSH 无法校验主机密钥，
 // 等于放弃防中间人（FR-SK-06）。这种情况必须响亮地失败。
+//
+// ══════════════════════════════════════════════════════════════════════
+//
+//	📝 练习题：本文件的【核心逻辑已注释掉】，请自行重写。
+//
+//	保留：类型 / 常量 / 变量 / 函数签名 / 文档注释 / 纯样板代码 / 全部测试
+//	重写：所有标了 TODO(enna) 的函数体（参考实现在函数内的注释块里）
+//
+//	自测：   go test ./internal/config/ -v
+//	完成标准：本包测试全绿，且你能解释每条注释里的"为什么"
+//
+// ══════════════════════════════════════════════════════════════════════
 package config
 
 import (
-	"errors"
+	// 提示：实现 validatePolicy / Validate 时需要 "errors"（errors.Join / errors.New）
+	// 提示：实现 validateDevices 时需要 "net"（net.SplitHostPort）
+	// 这两个 import 先被注释掉，是为了让未实现的骨架也能编译通过。
+	// "errors"
 	"fmt"
-	"net"
+	// "net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -96,7 +111,8 @@ type PolicySpec struct {
 	// 配置层只能校验取值合法，无法校验方向 —— 方向校验依赖技能注册表。
 	RiskOverrides map[string]string `yaml:"risk_overrides"`
 
-	// MaxRiskByChannel 是通道维度的风险上限。private 可配，group 由代码硬限 L0（FR-ID-04）。
+	// MaxRiskByChannel 是通道维度的风险上限。
+	// private 可配，group 由代码硬限 L0（FR-ID-04）。
 	MaxRiskByChannel map[string]string `yaml:"max_risk_by_channel"`
 
 	Principals []PrincipalSpec `yaml:"principals"`
@@ -121,12 +137,11 @@ type ACLSpec struct {
 
 // DeviceSpec 是一台受管设备的声明（FR-SK-01：静态清单，不支持临时连主机）。
 type DeviceSpec struct {
-	ID   string `yaml:"id"`
-	Addr string `yaml:"addr"` // host:port
-	User string `yaml:"user"` // 为空则继承 ssh.default_user
-	// KeyPath 是私钥文件路径。凭据不落配置，只存路径引用（FR-AU-06）。
-	KeyPath  string `yaml:"key_path"`
-	JumpHost string `yaml:"jump_host"` // 可选跳板机，格式同 Addr
+	ID       string   `yaml:"id"`
+	Addr     string   `yaml:"addr"` // host:port
+	User     string   `yaml:"user"` // 为空则继承 ssh.default_user
+	KeyPath  string   `yaml:"key_path"`
+	JumpHost string   `yaml:"jump_host"` // 可选跳板机，格式同 Addr
 	Groups   []string `yaml:"groups"`
 	Tags     []string `yaml:"tags"`
 
@@ -140,9 +155,6 @@ type DeviceSpec struct {
 }
 
 // Load 读取并校验配置文件。
-//
-// 用 Decoder + KnownFields(true)：字段名拼错会报错，而不是被静默忽略。
-// 这一行能省掉大量"为什么我的配置没生效"的排查时间。
 func Load(path string) (*Config, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -151,7 +163,14 @@ func Load(path string) (*Config, error) {
 	defer f.Close()
 
 	dec := yaml.NewDecoder(f)
-	dec.KnownFields(true)
+
+	// ┌── 参考实现 ────────────────────────────────────────────────────
+	// │ 这一行让"字段名拼错"变成响亮错误，而不是被静默忽略。
+	// │ 它能省掉大量"为什么我的配置没生效"的排查时间。
+	// │
+	// │ dec.KnownFields(true)
+	// └───────────────────────────────────────────────────────────────
+	// TODO(enna): 打开严格模式（见上方注释）
 
 	var c Config
 	if err := dec.Decode(&c); err != nil {
@@ -168,166 +187,183 @@ func Load(path string) (*Config, error) {
 
 // applyDefaults 只填充非安全参数，并且是**显式**的一步 —— 便于日志说明与测试断言。
 func (c *Config) applyDefaults() error {
-	if c.SSH.DialTimeout == 0 {
-		c.SSH.DialTimeout = defaultDialTimeout
-	}
-	if c.SSH.CommandTimeout == 0 {
-		c.SSH.CommandTimeout = defaultCommandTimeout
-	}
-	if c.SSH.DefaultUser == "" {
-		c.SSH.DefaultUser = "enna-ops"
-	}
-	for i := range c.Devices {
-		if c.Devices[i].User == "" {
-			c.Devices[i].User = c.SSH.DefaultUser
-		}
-	}
-	return nil
+	// ┌── 参考实现 ────────────────────────────────────────────────────
+	// │ if c.SSH.DialTimeout == 0 {
+	// │ 	c.SSH.DialTimeout = defaultDialTimeout
+	// │ }
+	// │ if c.SSH.CommandTimeout == 0 {
+	// │ 	c.SSH.CommandTimeout = defaultCommandTimeout
+	// │ }
+	// │ if c.SSH.DefaultUser == "" {
+	// │ 	c.SSH.DefaultUser = "enna-ops"
+	// │ }
+	// │ // 设备未声明 user 时继承默认账号
+	// │ for i := range c.Devices {
+	// │ 	if c.Devices[i].User == "" {
+	// │ 		c.Devices[i].User = c.SSH.DefaultUser
+	// │ 	}
+	// │ }
+	// │ return nil
+	// └───────────────────────────────────────────────────────────────
+	panic("TODO(enna): Config.applyDefaults 尚未实现")
 }
 
 // Validate 集中所有约束。
 //
 // 独立于 Load 的好处：不碰文件系统就能测试全部校验规则。
 func (c *Config) Validate() error {
-	var errs []error
-
-	// ── 顶层路径 ──
-	if err := requireAbsDir("data_dir", c.DataDir); err != nil {
-		errs = append(errs, err)
-	}
-	if err := requireAbsFile("audit.path", c.Audit.Path); err != nil {
-		errs = append(errs, err)
-	}
-
-	// ── SSH ──
-	if err := requireAbsFile("ssh.known_hosts", c.SSH.KnownHosts); err != nil {
-		errs = append(errs, err)
-	}
-	if c.SSH.DefaultUser == "" {
-		errs = append(errs, errors.New("ssh.default_user 不能为空"))
-	}
-	if c.SSH.DialTimeout <= 0 {
-		errs = append(errs, errors.New("ssh.dial_timeout 必须为正"))
-	}
-	if c.SSH.CommandTimeout <= 0 {
-		errs = append(errs, errors.New("ssh.command_timeout 必须为正"))
-	}
-
-	// ── 策略 ──
-	errs = append(errs, c.validatePolicy()...)
-
-	// ── 设备 ──
-	errs = append(errs, c.validateDevices()...)
-
-	if len(errs) > 0 {
-		return errors.Join(errs...)
-	}
-	return nil
+	// ┌── 参考实现 ────────────────────────────────────────────────────
+	// │ var errs []error
+	// │
+	// │ // ── 顶层路径 ──
+	// │ if err := requireAbsDir("data_dir", c.DataDir); err != nil {
+	// │ 	errs = append(errs, err)
+	// │ }
+	// │ if err := requireAbsFile("audit.path", c.Audit.Path); err != nil {
+	// │ 	errs = append(errs, err)
+	// │ }
+	// │
+	// │ // ── SSH ──
+	// │ if err := requireAbsFile("ssh.known_hosts", c.SSH.KnownHosts); err != nil {
+	// │ 	errs = append(errs, err)
+	// │ }
+	// │ if c.SSH.DefaultUser == "" {
+	// │ 	errs = append(errs, errors.New("ssh.default_user 不能为空"))
+	// │ }
+	// │ if c.SSH.DialTimeout <= 0 {
+	// │ 	errs = append(errs, errors.New("ssh.dial_timeout 必须为正"))
+	// │ }
+	// │ if c.SSH.CommandTimeout <= 0 {
+	// │ 	errs = append(errs, errors.New("ssh.command_timeout 必须为正"))
+	// │ }
+	// │
+	// │ // ── 策略 / 设备 ──
+	// │ errs = append(errs, c.validatePolicy()...)
+	// │ errs = append(errs, c.validateDevices()...)
+	// │
+	// │ // 一次报出全部问题，而不是让用户改一个跑一次
+	// │ if len(errs) > 0 {
+	// │ 	return errors.Join(errs...)
+	// │ }
+	// │ return nil
+	// └───────────────────────────────────────────────────────────────
+	// TODO(enna): 实现全部校验规则（对照 TestValidateErrors 的用例清单）
+	panic("TODO(enna): Config.Validate 尚未实现")
 }
 
+// validatePolicy 校验 policy 段。
+//
+// 关键点：group 通道的风险上限由代码硬限为 L0，配置试图放宽即拒绝启动（FR-ID-04）。
 func (c *Config) validatePolicy() []error {
-	var errs []error
-
-	for skill, risk := range c.Policy.RiskOverrides {
-		if !validRisks[risk] {
-			errs = append(errs, fmt.Errorf("policy.risk_overrides[%s]: 非法等级 %q", skill, risk))
-		}
-	}
-	for ch, risk := range c.Policy.MaxRiskByChannel {
-		if !validRisks[risk] {
-			errs = append(errs, fmt.Errorf("policy.max_risk_by_channel[%s]: 非法等级 %q", ch, risk))
-		}
-	}
-	// 群聊上限由代码硬限，配置试图放宽即拒绝启动（FR-ID-04）
-	if risk, ok := c.Policy.MaxRiskByChannel["group"]; ok && risk != RiskL0 {
-		errs = append(errs, fmt.Errorf(
-			"policy.max_risk_by_channel[group] 必须为 L0（群聊硬限，不可上调），实际 %q", risk))
-	}
-
-	seen := map[uint64]bool{}
-	for i, p := range c.Policy.Principals {
-		where := fmt.Sprintf("policy.principals[%d]", i)
-
-		if p.QQID == 0 {
-			errs = append(errs, fmt.Errorf("%s: qq_id 不能为 0", where))
-		} else if seen[p.QQID] {
-			errs = append(errs, fmt.Errorf("%s: qq_id %d 重复", where, p.QQID))
-		}
-		seen[p.QQID] = true
-
-		if strings.TrimSpace(p.Display) == "" {
-			errs = append(errs, fmt.Errorf("%s: display 不能为空", where))
-		}
-		if !validRoles[p.Role] {
-			errs = append(errs, fmt.Errorf("%s: 非法角色 %q（可选 OWNER/OPERATOR/VIEWER）", where, p.Role))
-		}
-		for j, a := range p.ACL {
-			if strings.TrimSpace(a.Group) == "" {
-				errs = append(errs, fmt.Errorf("%s.acl[%d]: group 不能为空", where, j))
-			}
-			if !validRisks[a.MaxRisk] {
-				errs = append(errs, fmt.Errorf("%s.acl[%d]: 非法等级 %q", where, j, a.MaxRisk))
-			}
-		}
-	}
-	return errs
+	// ┌── 参考实现 ────────────────────────────────────────────────────
+	// │ var errs []error
+	// │
+	// │ for skill, risk := range c.Policy.RiskOverrides {
+	// │ 	if !validRisks[risk] {
+	// │ 		errs = append(errs, fmt.Errorf("policy.risk_overrides[%s]: 非法等级 %q", skill, risk))
+	// │ 	}
+	// │ }
+	// │ for ch, risk := range c.Policy.MaxRiskByChannel {
+	// │ 	if !validRisks[risk] {
+	// │ 		errs = append(errs, fmt.Errorf("policy.max_risk_by_channel[%s]: 非法等级 %q", ch, risk))
+	// │ 	}
+	// │ }
+	// │ // 群聊上限不可上调
+	// │ if risk, ok := c.Policy.MaxRiskByChannel["group"]; ok && risk != RiskL0 {
+	// │ 	errs = append(errs, fmt.Errorf(
+	// │ 		"policy.max_risk_by_channel[group] 必须为 L0（群聊硬限，不可上调），实际 %q", risk))
+	// │ }
+	// │
+	// │ seen := map[uint64]bool{}
+	// │ for i, p := range c.Policy.Principals {
+	// │ 	where := fmt.Sprintf("policy.principals[%d]", i)
+	// │
+	// │ 	if p.QQID == 0 {
+	// │ 		errs = append(errs, fmt.Errorf("%s: qq_id 不能为 0", where))
+	// │ 	} else if seen[p.QQID] {
+	// │ 		errs = append(errs, fmt.Errorf("%s: qq_id %d 重复", where, p.QQID))
+	// │ 	}
+	// │ 	seen[p.QQID] = true
+	// │
+	// │ 	if strings.TrimSpace(p.Display) == "" {
+	// │ 		errs = append(errs, fmt.Errorf("%s: display 不能为空", where))
+	// │ 	}
+	// │ 	if !validRoles[p.Role] {
+	// │ 		errs = append(errs, fmt.Errorf("%s: 非法角色 %q（可选 OWNER/OPERATOR/VIEWER）", where, p.Role))
+	// │ 	}
+	// │ 	for j, a := range p.ACL {
+	// │ 		if strings.TrimSpace(a.Group) == "" {
+	// │ 			errs = append(errs, fmt.Errorf("%s.acl[%d]: group 不能为空", where, j))
+	// │ 		}
+	// │ 		if !validRisks[a.MaxRisk] {
+	// │ 			errs = append(errs, fmt.Errorf("%s.acl[%d]: 非法等级 %q", where, j, a.MaxRisk))
+	// │ 		}
+	// │ 	}
+	// │ }
+	// │ return errs
+	// └───────────────────────────────────────────────────────────────
+	panic("TODO(enna): Config.validatePolicy 尚未实现")
 }
 
+// validateDevices 校验 devices 段。
 func (c *Config) validateDevices() []error {
-	var errs []error
-	seen := map[string]bool{}
-
-	for i, d := range c.Devices {
-		where := fmt.Sprintf("devices[%d]", i)
-
-		if strings.TrimSpace(d.ID) == "" {
-			errs = append(errs, fmt.Errorf("%s: id 不能为空", where))
-		} else {
-			where = fmt.Sprintf("devices[%d](%s)", i, d.ID)
-			if seen[d.ID] {
-				errs = append(errs, fmt.Errorf("%s: id 重复", where))
-			}
-			seen[d.ID] = true
-		}
-
-		if _, _, err := net.SplitHostPort(d.Addr); err != nil {
-			errs = append(errs, fmt.Errorf("%s: addr 必须是 host:port 形式，实际 %q", where, d.Addr))
-		}
-		if d.JumpHost != "" {
-			if _, _, err := net.SplitHostPort(d.JumpHost); err != nil {
-				errs = append(errs, fmt.Errorf("%s: jump_host 必须是 host:port 形式，实际 %q", where, d.JumpHost))
-			}
-		}
-		if d.KeyPath != "" && !filepath.IsAbs(d.KeyPath) {
-			errs = append(errs, fmt.Errorf("%s: key_path 必须是绝对路径，实际 %q", where, d.KeyPath))
-		}
-		if len(d.Groups) == 0 {
-			errs = append(errs, fmt.Errorf("%s: 必须至少属于一个 groups（ACL 按组判定）", where))
-		}
-
-		for j, p := range d.AllowedPaths {
-			if !filepath.IsAbs(p) {
-				errs = append(errs, fmt.Errorf("%s.allowed_paths[%d]: 必须是绝对路径，实际 %q", where, j, p))
-				continue
-			}
-			clean := filepath.Clean(p)
-			// 允许卷根（Linux 的 "/"、Windows 的 `C:\`）等于允许全盘，直接拒绝。
-			// 用 VolumeName 拼接而不写死 "/"，否则在 Windows 上会漏判。
-			root := filepath.VolumeName(clean) + string(filepath.Separator)
-			if clean == root {
-				errs = append(errs, fmt.Errorf("%s.allowed_paths[%d]: 不允许卷根目录 %q", where, j, p))
-			}
-		}
-		for j, u := range d.ManagedUnits {
-			if strings.TrimSpace(u) == "" {
-				errs = append(errs, fmt.Errorf("%s.managed_units[%d]: 不能为空字符串", where, j))
-			}
-		}
-	}
-	return errs
+	// ┌── 参考实现 ────────────────────────────────────────────────────
+	// │ var errs []error
+	// │ seen := map[string]bool{}
+	// │
+	// │ for i, d := range c.Devices {
+	// │ 	where := fmt.Sprintf("devices[%d]", i)
+	// │
+	// │ 	if strings.TrimSpace(d.ID) == "" {
+	// │ 		errs = append(errs, fmt.Errorf("%s: id 不能为空", where))
+	// │ 	} else {
+	// │ 		where = fmt.Sprintf("devices[%d](%s)", i, d.ID)
+	// │ 		if seen[d.ID] {
+	// │ 			errs = append(errs, fmt.Errorf("%s: id 重复", where))
+	// │ 		}
+	// │ 		seen[d.ID] = true
+	// │ 	}
+	// │
+	// │ 	if _, _, err := net.SplitHostPort(d.Addr); err != nil {
+	// │ 		errs = append(errs, fmt.Errorf("%s: addr 必须是 host:port 形式，实际 %q", where, d.Addr))
+	// │ 	}
+	// │ 	if d.JumpHost != "" {
+	// │ 		if _, _, err := net.SplitHostPort(d.JumpHost); err != nil {
+	// │ 			errs = append(errs, fmt.Errorf("%s: jump_host 必须是 host:port 形式，实际 %q", where, d.JumpHost))
+	// │ 		}
+	// │ 	}
+	// │ 	if d.KeyPath != "" && !filepath.IsAbs(d.KeyPath) {
+	// │ 		errs = append(errs, fmt.Errorf("%s: key_path 必须是绝对路径，实际 %q", where, d.KeyPath))
+	// │ 	}
+	// │ 	if len(d.Groups) == 0 {
+	// │ 		errs = append(errs, fmt.Errorf("%s: 必须至少属于一个 groups（ACL 按组判定）", where))
+	// │ 	}
+	// │
+	// │ 	for j, p := range d.AllowedPaths {
+	// │ 		if !filepath.IsAbs(p) {
+	// │ 			errs = append(errs, fmt.Errorf("%s.allowed_paths[%d]: 必须是绝对路径，实际 %q", where, j, p))
+	// │ 			continue
+	// │ 		}
+	// │ 		clean := filepath.Clean(p)
+	// │ 		// 允许卷根（Linux 的 "/"、Windows 的 `C:\`）等于允许全盘，直接拒绝。
+	// │ 		// 用 VolumeName 拼接而不写死 "/"，否则在 Windows 上会漏判。
+	// │ 		root := filepath.VolumeName(clean) + string(filepath.Separator)
+	// │ 		if clean == root {
+	// │ 			errs = append(errs, fmt.Errorf("%s.allowed_paths[%d]: 不允许卷根目录 %q", where, j, p))
+	// │ 		}
+	// │ 	}
+	// │ 	for j, u := range d.ManagedUnits {
+	// │ 		if strings.TrimSpace(u) == "" {
+	// │ 			errs = append(errs, fmt.Errorf("%s.managed_units[%d]: 不能为空字符串", where, j))
+	// │ 		}
+	// │ 	}
+	// │ }
+	// │ return errs
+	// └───────────────────────────────────────────────────────────────
+	panic("TODO(enna): Config.validateDevices 尚未实现")
 }
 
-// ── 校验辅助 ──
+// ── 校验辅助（已给，不用改）────────────────────────────────────────────
 
 func requireAbsDir(field, v string) error {
 	if strings.TrimSpace(v) == "" {
