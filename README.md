@@ -107,21 +107,41 @@
 | 我关心 Agent 智能化 | `06` → `01` §4.2 |
 | 我要做决策 | `09` 第五部分（现在需要回答的最小集合） |
 
-## 6. 从哪开始写代码
+## 6. 当前进度与从哪继续
 
-按 [`docs/08-m0-implementation-guide.md`](docs/08-m0-implementation-guide.md) 的 **Step 0 → Step 9** 顺序推进。
+| 阶段 | 状态 |
+|---|---|
+| 设计文档 `00`–`09` | ✅ 已基线（91 条内部链接零断链） |
+| **M0 Step 0–2**：配置加载 + 审计哈希链 + CLI | ✅ **已实现可用** —— `go build` / `go vet` / `go test -race` 全绿，24 顶层 + 40 子用例 |
+| M0 Step 3–7：设备模型 / SSH 传输 / 技能注册表 / 策略闸门 / 审批票据 | ⬜ 待实现 |
+| M0 Step 8–9：CLI 补全 / 端到端验收 | 🟡 部分（`config` / `audit` 子命令已完成） |
 
-**M0 是一个 Go 二进制，不引入 gRPC / Protobuf / Python / QQ / LLM。**
+**已经能用的部分**（现在就可以跑）：
 
-做完 M0 你会得到一个**完全不依赖大模型**的、带防篡改审计与确定性权限闸门的远程运维工具：
+```bash
+go build ./... && go test -race ./...
+
+cp configs/enna.example.yaml configs/enna.yaml   # 改成本机绝对路径
+go run ./cmd/enna config check --config configs/enna.yaml
+go run ./cmd/enna audit verify --config configs/enna.yaml
+go run ./cmd/enna audit show   --config configs/enna.yaml --tail 20
+```
+
+`internal/audit` 本身就是一个**可独立复用的防篡改 append-only 日志**：
+篡改任一记录会被精确定位到条号，删除记录会被 `prev_hash` 抓住，
+往可疑历史上追加会被拒绝启动（fail-closed）。
+
+代码阅读顺序与五个关键设计问题见 [`docs/08-m0-implementation-guide.md`](docs/08-m0-implementation-guide.md) §1.5。
+
+M0 的最终目标是一个**完全不依赖大模型**的、带防篡改审计与确定性权限闸门的远程运维工具：
 
 ```bash
 enna device add lab01 --addr 127.0.0.1:22
 enna device trust lab01 --fingerprint SHA256:...
-enna exec lab01 host.disk --json          # 真实数据
-enna exec lab01 service.restart --unit nginx   # NEED_APPROVAL + 确认码
-enna approve <ticket-id> <code>           # 执行
-enna audit verify                         # OK / 指出断链位置
+enna exec lab01 host.disk --json                 # 真实数据
+enna exec lab01 service.restart --unit nginx     # NEED_APPROVAL + 确认码
+enna approve <ticket-id> <code>                  # 执行
+enna audit verify                                # OK / 指出断链位置
 ```
 
 QQ 与 LLM 都是在它之上做**加法**。

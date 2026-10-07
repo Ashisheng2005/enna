@@ -7,28 +7,18 @@
 //   - FR-AU-07：记录不可删除，只可导出
 //   - FR-AU-04：落盘前脱敏，并记录命中次数
 //
-// 链式结构：
+// # 链式结构
 //
 //	hash_n = SHA256( canonical(record_n) ‖ hash_{n-1} )
 //
 // 它保证的是"每条记录都承诺了它之前的全部历史"。改动任何一条历史记录，
 // 从那条开始的所有哈希都对不上 —— 篡改无法只藏在一处。
-//
-// ══════════════════════════════════════════════════════════════════════
-//
-//	📝 练习题：本文件的【核心逻辑已注释掉】，请自行重写。
-//	重写：ComputeHash（参考实现在函数内）
-//	自测：go test ./internal/audit/ -run TestComputeHash -v
-//
-// ══════════════════════════════════════════════════════════════════════
 package audit
 
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	// 提示：实现 ComputeHash 时需要 "encoding/json"（json.Marshal）。
-	// 先注释掉是为了让未实现的骨架也能编译通过。
-	// "encoding/json"
+	"encoding/json"
 	"time"
 )
 
@@ -72,10 +62,11 @@ type Record struct {
 
 // ComputeHash 计算本条记录的链式哈希。
 //
-// # 要回答的三个"为什么"
+// 三个"为什么"，想清楚这三个 M0 的审计链就真的掌握了：
 //
 //  1. 为什么先把自己的 Hash 字段清空？
 //     否则就是"用哈希算哈希"，永远算不出稳定值。
+//     这也让 Verify 可以在不改动记录的前提下重算比对。
 //
 //  2. 为什么用 struct 而不是 map 来序列化？
 //     encoding/json 对 map 的键**排序**，对 struct 按**字段声明顺序**输出。
@@ -83,27 +74,24 @@ type Record struct {
 //
 //  3. 为什么要把 PrevHash 写进哈希输入（而不是只存成字段）？
 //     链式结构的本质是"每条记录承诺它前面的全部历史"。
-//     只存字段而不参与计算，等于没有链。
+//     只存字段而不参与计算，等于没有链：删掉中间一条，剩余记录的自身哈希仍然自洽。
 func (r Record) ComputeHash() string {
-	// ┌── 参考实现 ────────────────────────────────────────────────────
-	// │ c := r
-	// │ c.Hash = "" // 关键 1：不能把 hash 算进自己
-	// │ b, err := json.Marshal(c)
-	// │ if err != nil {
-	// │ 	// Record 全是可序列化类型；走到这里说明有人加了不可序列化的字段
-	// │ 	panic("audit: record 无法序列化: " + err.Error())
-	// │ }
-	// │ h := sha256.New()
-	// │ h.Write(b)
-	// │ h.Write([]byte(r.PrevHash)) // 关键 3：把前序历史纳入承诺
-	// │ return hex.EncodeToString(h.Sum(nil))
-	// └───────────────────────────────────────────────────────────────
-	panic("TODO(enna): Record.ComputeHash 尚未实现")
+	c := r
+	c.Hash = "" // 关键 1：不能把 hash 算进自己
+	b, err := json.Marshal(c)
+	if err != nil {
+		// Record 全是可序列化类型；走到这里说明有人加了不可序列化的字段
+		panic("audit: record 无法序列化: " + err.Error())
+	}
+	h := sha256.New()
+	h.Write(b)
+	h.Write([]byte(r.PrevHash)) // 关键 3：把前序历史纳入承诺
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // HashBytes 返回内容的 sha256 十六进制摘要，用于参数与输出的指纹。
 //
-// 这个已经给好了 —— 它只是薄薄一层封装，不是本练习的重点。
+// 链上只存摘要、全文另存 artifacts：兼顾可追溯与体积。
 func HashBytes(b []byte) string {
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])

@@ -86,71 +86,67 @@ enna audit verify                        # OK / 指出断链位置
 
 ---
 
-## 1.5 本仓库当前的代码状态（**练习题模式**）
+## 1.5 本仓库当前的代码状态
 
-Step 0–2 的代码**已经写好并验证通过**（构建、vet、24 个顶层用例 + 40 个子用例全绿、端到端 CLI 与篡改检测实测通过），然后按约定把**核心逻辑注释掉了**：
+**M0 的 Step 0–2 已实现且验证通过** —— 是可直接使用的代码，不是伪代码，也不是骨架。
 
 | 文件 | 状态 |
 |---|---|
-| `internal/config/config.go` | ⬜ 待重写 4 个函数（`applyDefaults` / `Validate` / `validatePolicy` / `validateDevices`）+ 1 处严格模式开关 |
-| `internal/audit/record.go` | ⬜ 待重写 `Record.ComputeHash` |
-| `internal/audit/log.go` | ⬜ 待重写 `Open` / `Append` / `Verify` |
-| `internal/audit/read.go` | ⬜ 待重写 `Read` |
-| `internal/audit/redact.go` | ⬜ 待重写 `Redact`（规则集已给） |
-| `internal/cli/`、`cmd/enna/` | ✅ 已给（样板代码，不是学习重点） |
-| `*_test.go` | ✅ 已给 —— **它们是验收标准，不要改** |
-| `configs/enna.example.yaml` | ✅ 已给 |
-| `internal/config` 的 `requireAbs*` / `Find*` | ✅ 已给（trivial 工具函数） |
+| `internal/config/config.go` | ✅ 配置加载 + 全部校验规则（含跨平台路径处理） |
+| `internal/audit/record.go` | ✅ `Record` / `ComputeHash` / `HashBytes` |
+| `internal/audit/log.go` | ✅ `Open`（状态恢复 + 拒绝被篡改的历史）、`Append`（fsync + 毒化）、`Verify` |
+| `internal/audit/read.go` | ✅ `Read` |
+| `internal/audit/redact.go` | ✅ 脱敏规则 + `Redact` |
+| `internal/cli/`、`cmd/enna/` | ✅ 子命令分发（`config check` / `audit verify` / `audit show`） |
+| `*_test.go` | ✅ 24 个顶层用例 + 40 个子用例 |
+| `configs/enna.example.yaml` | ✅ 含全部安全约束的注释 |
 
-### 保留了什么，注释掉了什么
-
-| 保留（不用管） | 注释掉（你来写） |
-|---|---|
-| 所有类型 / 常量 / 变量声明 | 承载"为什么这么设计"的核心逻辑 |
-| 所有函数签名与文档注释 | 哈希计算、链校验、fsync 写入 |
-| 纯样板代码（错误包装、格式化、trivial getter） | 脱敏主循环、配置校验规则、路径判定 |
-| **全部测试代码** | — |
-
-**为什么不把整个文件都注释掉**：那样包就编译不过，你连"签名对不对"都验证不了。现在骨架能通过 `go build` 与 `go vet`，只有运行到未实现处才 panic —— 反馈更及时。被临时注释掉的 import 也都留了提示（"实现 X 时需要包 Y"）。
-
-### 怎么用
+### 验证结果
 
 ```bash
-# 1. 看当前有多少处待实现
-grep -rn "TODO(enna)" --include=*.go .
-
-# 2. 实现一个，跑一次测试（不要写完一片再一起调试）
-go test ./internal/audit/ -run TestComputeHash -v
-
-# 3. 参考实现在每个函数内的注释块里（┌── 参考实现 ──┐ 那种）
-#    写完自己的版本后，把那整段注释删掉
-
-# 4. 全部完成后
-go build ./... && go vet ./... && go test -race ./...
+go build ./...        # 0
+go vet ./...          # 0
+go test -race ./...   # ok  internal/audit    ok  internal/config
 ```
 
-### 参考答案在 git 历史里
+实测通过的端到端行为：
 
-```bash
-git show 8a76e98                                 # 完整可运行的参考实现
-git diff 8a76e98 HEAD                            # 看看到底注释掉了哪些东西
-git checkout 8a76e98 -- internal/audit/log.go    # 只想看某一个文件的答案
-```
+- `enna config check` 输出设备与主体摘要；
+- `enna audit verify` 校验链完整性并打印链尾哈希；
+- **篡改任意一条记录** → 报"哈希不匹配"并精确定位到条号；
+- **抽掉中间一条** → 报 `prev_hash` 断裂；
+- **往被篡改的历史上追加** → `Open` 拒绝启动（fail-closed）。
 
-> **建议**：先自己写，卡住了再看函数内的注释块，实在不行才 `git show`。
+### 建议的阅读顺序
 
-### 这四个"为什么"才是重点
+代码注释承担了"为什么这么设计"的说明。按这个顺序读能顺着因果走：
 
-难点不在语法，而在几个具体判断：
+| 顺序 | 文件 | 读什么 |
+|---|---|---|
+| 1 | `internal/audit/record.go` | 为什么用 struct 而不是 map 做哈希序列化（`ComputeHash` 的 doc 里有三条"为什么"） |
+| 2 | `internal/audit/log.go` | `Open` 的状态恢复与"拒绝可疑历史"、`Append` 的 fsync 与"毒化"、`Verify` 的双重校验 |
+| 3 | `internal/audit/audit_test.go` | **测试即规格**：篡改 / 删除 / 重开续链分别怎么被抓住 |
+| 4 | `internal/audit/redact.go` | 脱敏规则里那两个刻意的决定（`\b` 的坑、分隔符归一） |
+| 5 | `internal/config/config.go` | `KnownFields`、`errors.Join`、"配置不能提升权限"的第一道落地 |
+| 6 | `internal/config/config_test.go` | 表驱动测试的写法 + 跨平台路径处理（为什么用 `filepath.VolumeName` 而不写死 `/`） |
+| 7 | `internal/cli/cli.go` | 标准库 `flag` 的子命令分发模式（子命令的本质就是独立的 `FlagSet`） |
 
-1. 为什么审计记录**不能用 `map[string]any`** 序列化？（提示：`encoding/json` 对 map 排序、对 struct 按声明顺序）
-2. 为什么 `Write` 之后**必须 `Sync`**？（提示：断电后"记录过的操作"是否真的存在）
-3. 为什么写入失败要把日志**"毒化"**，而不是回滚 `seq` 重试？
-4. 为什么路径前缀判断**不能用 `strings.HasPrefix`**？（提示：`/var/logs-evil` 与 `/var/log`）
+### 值得停下来想清楚的五个问题
 
-### 完成标准
+代码注释里有答案，但建议先自己答一遍再看：
 
-`go test -race ./...` 全绿，且你能不看注释解释上面四个问题。
+1. 审计记录为什么**不能用 `map[string]any`** 序列化？
+2. `Write` 之后为什么**必须 `Sync`**？
+3. 写入失败为什么要把日志**"毒化"**，而不是回滚 `seq` 重试？
+4. 路径前缀判断为什么**不能用 `strings.HasPrefix`**？（提示：`/var/logs-evil` 与 `/var/log`）
+5. 脱敏规则里 `password` 那组为什么**不加 `\b`**？（提示：`DB_PASSWORD=x`）
+
+### 关于 git 历史的一点说明
+
+`8a76e98`（"参考实现"提交）里**不包含 `internal/audit/`** —— 当时 `.gitignore` 的
+`audit/` 规则把整个包静默排除了（详见其后 `58c4d39` 的修正说明）。
+
+所以 **audit 包的可用版本以当前代码为准**，不要用 `git show 8a76e98 -- internal/audit/` 去找答案 —— 那里没有。
 
 ---
 
@@ -210,7 +206,7 @@ ennaManagement/
 
 每一步都是**可独立验证**的。做完一步就跑一次验收命令 —— 不要写完 8 个文件再一起调试。
 
-### Step 0 · 初始化
+### Step 0 · 初始化 ✅ 已完成
 
 ```bash
 go mod init github.com/Ashisheng2005/enna
@@ -232,7 +228,7 @@ linters:
 
 ---
 
-### Step 1 · 配置加载
+### Step 1 · 配置加载 ✅ 已完成
 
 **文件**：`internal/config/config.go`
 
@@ -272,7 +268,7 @@ if err := dec.Decode(&c); err != nil { ... }
 
 ---
 
-### Step 2 · 审计哈希链（**M0 最有教学价值的一步**）
+### Step 2 · 审计哈希链 ✅ 已完成（**M0 最有教学价值的一步**）
 
 **文件**：`internal/audit/record.go`、`log.go`、`redact.go`
 
@@ -863,7 +859,7 @@ enna approve <ticket-id> <正确码>              # 失败：已消费
 
 ---
 
-### Step 8 · CLI 装配
+### Step 8 · CLI 装配 🟡 部分完成（`config` / `audit` 子命令已实现，其余待 Step 3–7）
 
 **文件**：`cmd/enna/main.go`、`internal/cli/*.go`
 
